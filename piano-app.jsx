@@ -182,8 +182,16 @@ export default function PianoApp() {
   }, [getAudioContext]);
 
   const [currentVerseIndex, setCurrentVerseIndex] = useState(0);
+  const lastPlayedTimeRef = useRef(0);
 
   const handleKeyPress = useCallback((note) => {
+    // Prevent double-triggering on touch devices
+    const now = Date.now();
+    if (now - lastPlayedTimeRef.current < 100) {
+      return;
+    }
+    lastPlayedTimeRef.current = now;
+
     playNote(note);
 
     if (selectedSong && currentNoteIndex < selectedSong.notes.length) {
