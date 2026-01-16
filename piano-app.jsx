@@ -182,15 +182,18 @@ export default function PianoApp() {
   }, [getAudioContext]);
 
   const [currentVerseIndex, setCurrentVerseIndex] = useState(0);
-  const lastPlayedTimeRef = useRef(0);
+  const lastPlayedTimeRef = useRef({});
 
   const handleKeyPress = useCallback((note) => {
-    // Prevent double-triggering on touch devices
+    // Prevent double-triggering on touch devices and limit repeat rate
     const now = Date.now();
-    if (now - lastPlayedTimeRef.current < 100) {
+    const lastTime = lastPlayedTimeRef.current[note] || 0;
+
+    // Increased backoff to 700ms per note to handle longer presses
+    if (now - lastTime < 700) {
       return;
     }
-    lastPlayedTimeRef.current = now;
+    lastPlayedTimeRef.current[note] = now;
 
     playNote(note);
 
