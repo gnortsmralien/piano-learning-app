@@ -18,6 +18,49 @@ const PIANO_KEYS = [
   { note: 'F5', type: 'white' }, { note: 'G5', type: 'white' }, { note: 'A5', type: 'white' }, { note: 'B5', type: 'white' }
 ];
 
+const MACHINE_SOUNDS = {
+  // Low Octave: Construction/Heavy
+  'C3': { id: 'tractor', icon: '🚜' },
+  'D3': { id: 'bulldozer', icon: '🚜' },
+  'E3': { id: 'excavator', icon: '🏗️' },
+  'F3': { id: 'dump_truck', icon: '🚚' },
+  'G3': { id: 'concrete_mixer', icon: '🎰' }, // Mixer fallback icon choice
+  'A3': { id: 'autocrane', icon: '🏗️' },
+  'B3': { id: 'garbage_truck', icon: '🗑️' },
+
+  // Mid Octave: Public Transit/Water
+  'C4': { id: 'bus', icon: '🚌' },
+  'D4': { id: 'trolleybus', icon: '🚎' },
+  'E4': { id: 'tram', icon: '🚋' },
+  'F4': { id: 'train', icon: '🚂' },
+  'G4': { id: 'metro', icon: '🚇' },
+  'A4': { id: 'ferry', icon: '⛴️' },
+  'B4': { id: 'water_taxi', icon: '🚤' },
+
+  // High Octave: Emergency/Air/Service
+  'C5': { id: 'taxi', icon: '🚕' },
+  'D5': { id: 'police', icon: '🚓' },
+  'E5': { id: 'fire_truck', icon: '🚒' },
+  'F5': { id: 'ambulance', icon: '🚑' },
+  'G5': { id: 'tow_truck', icon: '🛻' },
+  'A5': { id: 'helicopter', icon: '🚁' },
+  'B5': { id: 'plane', icon: '✈️' }
+};
+
+const ANIMAL_SOUNDS = {
+  // Low Octave: Farm
+  'C3': { id: 'cow', icon: '🐄' }, 'D3': { id: 'horse', icon: '🐎' }, 'E3': { id: 'pig', icon: '🐖' },
+  'F3': { id: 'sheep', icon: '🐑' }, 'G3': { id: 'donkey', icon: '🫏' }, 'A3': { id: 'goat', icon: '🐐' }, 'B3': { id: 'rooster', icon: '🐓' },
+
+  // Mid Octave: Wild/Pets
+  'C4': { id: 'bear', icon: '🐻' }, 'D4': { id: 'wolf', icon: '🐺' }, 'E4': { id: 'fox', icon: '🦊' },
+  'F4': { id: 'eagle', icon: '🦅' }, 'G4': { id: 'owl', icon: '🦉' }, 'A4': { id: 'dog', icon: '🐕' }, 'B4': { id: 'cat', icon: '🐈' },
+
+  // High Octave: Small/Birds
+  'C5': { id: 'chicken', icon: '🐔' }, 'D5': { id: 'duck', icon: '🦆' }, 'E5': { id: 'crow', icon: '🐦' },
+  'F5': { id: 'bee', icon: '🐝' }, 'G5': { id: 'fly', icon: '🪰' }, 'A5': { id: 'mosquito', icon: '🦟' }, 'B5': { id: 'cricket', icon: '🦗' }
+};
+
 const AudioContext = window.AudioContext || window.webkitAudioContext;
 
 export default function PianoApp() {
@@ -28,11 +71,14 @@ export default function PianoApp() {
   const [playedNotes, setPlayedNotes] = useState([]);
   const [instrument, setInstrument] = useState('piano');
   const audioContextRef = useRef(null);
+  const audioBuffersRef = useRef({});
 
   const INSTRUMENTS = [
     { id: 'piano', name: 'Piano', icon: '🎹' },
     { id: 'bells', name: 'Bells', icon: '🔔' },
-    { id: 'guitar', name: 'Guitar', icon: '🎸' }
+    { id: 'guitar', name: 'Guitar', icon: '🎸' },
+    { id: 'machine', name: 'Machines', icon: '🚗' },
+    { id: 'animals', name: 'Animals', icon: '🐈' }
   ];
 
   const getAudioContext = useCallback(() => {
@@ -41,6 +87,31 @@ export default function PianoApp() {
     }
     return audioContextRef.current;
   }, []);
+
+  // Load machine and animal sounds on mount
+  useEffect(() => {
+    const loadSounds = async () => {
+      const ctx = getAudioContext();
+      const allSoundConfigs = [...Object.values(MACHINE_SOUNDS), ...Object.values(ANIMAL_SOUNDS)];
+
+      for (const config of allSoundConfigs) {
+        try {
+          // Avoid reloading if already exists
+          if (audioBuffersRef.current[config.id]) continue;
+
+          const response = await fetch(`/sounds/${config.id}.mp3`);
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+            audioBuffersRef.current[config.id] = audioBuffer;
+          }
+        } catch (error) {
+          console.error(`Failed to load sound for ${config.id}:`, error);
+        }
+      }
+    };
+    loadSounds();
+  }, [getAudioContext]);
 
   const playNote = useCallback((note) => {
     const ctx = getAudioContext();
@@ -155,6 +226,41 @@ export default function PianoApp() {
       oscillator2.start(ctx.currentTime);
       oscillator.stop(ctx.currentTime + 0.6);
       oscillator2.stop(ctx.currentTime + 0.6);
+    } else if (instrument === 'machine' || instrument === 'animals') {
+      const source = instrument === 'machine' ? MACHINE_SOUNDS : ANIMAL_SOUNDS;
+      const sound = source[note];
+
+      // Try file playback first
+      if (sound && audioBuffersRef.current[sound.id]) {
+        try {
+          const sourceNode = ctx.createBufferSource();
+          sourceNode.buffer = audioBuffersRef.current[sound.id];
+
+          const gainNode = ctx.createGain();
+          gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 2.0); // Longer fade for samples
+
+          sourceNode.connect(gainNode);
+          gainNode.connect(ctx.destination);
+
+          sourceNode.start(ctx.currentTime);
+          return;
+        } catch (e) {
+          console.error("Error playing buffer, falling back to synth", e);
+        }
+      }
+
+      // Fallback synthesis if file not loaded
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      oscillator.type = 'triangle';
+      oscillator.frequency.setValueAtTime(freq, ctx.currentTime);
+      gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      oscillator.start(ctx.currentTime);
+      oscillator.stop(ctx.currentTime + 0.3);
     }
   }, [getAudioContext, instrument]);
 
@@ -234,6 +340,15 @@ export default function PianoApp() {
     setScreen('piano');
   };
 
+  const startFreeplay = () => {
+    setSelectedSong(null);
+    setCurrentNoteIndex(0);
+    setPlayedNotes([]);
+    setScreen('freeplay');
+    // Default to machine sounds if in freeplay? Optional, but user asked for machine noises in freeplay.
+    // Let's not force it, but make it available. 
+  };
+
   const goBack = () => {
     setScreen('selection');
     setSelectedSong(null);
@@ -257,7 +372,6 @@ export default function PianoApp() {
           🎵 Pick a Song! 🎵
         </h1>
 
-        {/* Instrument Selector */}
         <div className="flex justify-center gap-3 mb-4">
           {INSTRUMENTS.map(inst => (
             <button
@@ -275,6 +389,20 @@ export default function PianoApp() {
               <span>{inst.name}</span>
             </button>
           ))}
+        </div>
+
+        {/* Freeplay Button */}
+        <div className="flex justify-center mb-6">
+          <button
+            onClick={startFreeplay}
+            className="bg-gradient-to-r from-green-400 to-blue-500 text-white px-8 py-6 rounded-3xl text-2xl font-bold shadow-xl hover:shadow-2xl hover:scale-105 transition-all transform flex items-center gap-4 active:scale-95 border-4 border-white/30"
+          >
+            <span className="text-5xl">🎹</span>
+            <div className="flex flex-col items-start">
+              <span>Free Play Mode</span>
+              <span className="text-sm opacity-90 font-normal">Play anything you want!</span>
+            </div>
+          </button>
         </div>
 
         <div className="grid grid-cols-4 gap-3 max-w-6xl mx-auto">
@@ -373,48 +501,94 @@ export default function PianoApp() {
         </button>
       </div>
 
-      {/* Progress Bar */}
-      <div className="px-4 py-2">
-        <div className="h-4 bg-white/30 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-yellow-400 transition-all duration-300 rounded-full"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <div className="flex justify-between items-center text-white mt-1 text-sm px-2">
-          <span>Verse {currentVerseIndex + 1} / {activeVerses.length}</span>
-          <span>{notesPlayedTotal} / {totalNotes} notes</span>
-        </div>
-      </div>
-
-      {/* Lyrics Display */}
-      <div className="flex-shrink-0 px-4 py-4">
-        <div className="bg-white/90 rounded-2xl p-4 shadow-xl">
-          <div className="flex flex-wrap justify-center gap-2 min-h-16 items-center">
-            {selectedSong?.verses?.[currentVerseIndex]?.map((lyric, idx) => (
-              <span
-                key={idx}
-                className={`text-2xl font-bold px-2 py-1 rounded transition-all duration-200 ${idx < currentNoteIndex
-                  ? 'text-green-500 bg-green-100'
-                  : idx === currentNoteIndex
-                    ? 'text-purple-600 bg-yellow-300 scale-125 animate-pulse'
-                    : 'text-gray-400'
-                  }`}
-              >
-                {lyric}
-              </span>
-            ))}
+      {/* Progress Bar - Only valid if song selected */}
+      {selectedSong && (
+        <div className="px-4 py-2">
+          <div className="h-4 bg-white/30 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-yellow-400 transition-all duration-300 rounded-full"
+              style={{ width: `${progress}%` }}
+            />
           </div>
-          <p className="text-center text-purple-600 font-bold mt-3 text-lg">
-            Press the <span className="text-yellow-500 text-xl">{currentExpectedNote}</span> key!
-          </p>
+          <div className="flex justify-between items-center text-white mt-1 text-sm px-2">
+            <span>Verse {currentVerseIndex + 1} / {activeVerses.length}</span>
+            <span>{notesPlayedTotal} / {totalNotes} notes</span>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Piano */}
-      <div className="flex-1 flex items-end pb-4 px-2">
-        <div className="w-full flex justify-center">
-          <div className="flex">
+      {/* Freeplay Controls */}
+      {screen === 'freeplay' && (
+        <div className="flex justify-center gap-3 my-4">
+          {INSTRUMENTS.map(inst => (
+            <button
+              key={inst.id}
+              onClick={() => setInstrument(inst.id)}
+              className={`
+                px-4 py-2 rounded-full font-bold shadow-lg transition-all duration-200
+                flex items-center gap-2 active:scale-95
+                ${instrument === inst.id
+                  ? 'bg-white text-purple-600 scale-105 ring-4 ring-yellow-400'
+                  : 'bg-white/60 text-gray-700 hover:bg-white/80'}
+              `}
+            >
+              <span className="text-xl">{inst.icon}</span>
+              <span>{inst.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Lyrics Display - Only in song mode */}
+      {selectedSong && (
+        <div className="flex-shrink-0 px-4 py-4 overflow-hidden relative w-full flex justify-center">
+          <div className="bg-white/90 rounded-2xl p-6 shadow-xl w-full max-w-4xl overflow-hidden relative">
+
+            {/* Scrolling Lyrics Container */}
+            <div
+              className="flex items-center transition-transform duration-500 ease-out will-change-transform"
+              style={{
+                transform: `translateX(calc(50% - ${(currentNoteIndex * 120) + 60}px))` /* Approximate centering based on width */
+              }}
+            >
+              {selectedSong?.verses?.[currentVerseIndex]?.map((lyric, idx) => (
+                <div
+                  key={idx}
+                  className={`
+                      flex-shrink-0 w-[120px] text-center transition-all duration-300
+                      ${idx === currentNoteIndex ? 'scale-125 z-10' : 'scale-100 opacity-60'}
+                    `}
+                >
+                  <span
+                    className={`
+                        text-4xl font-black px-3 py-2 rounded-xl inline-block
+                        ${idx < currentNoteIndex
+                        ? 'text-green-500'
+                        : idx === currentNoteIndex
+                          ? 'text-purple-600 bg-yellow-300 shadow-lg animate-bounce'
+                          : 'text-gray-400'}
+                      `}
+                  >
+                    {lyric}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="absolute top-0 bottom-0 left-0 w-32 bg-gradient-to-r from-white/90 to-transparent z-20 pointer-events-none" />
+            <div className="absolute top-0 bottom-0 right-0 w-32 bg-gradient-to-l from-white/90 to-transparent z-20 pointer-events-none" />
+
+            <p className="text-center text-purple-600 font-bold mt-6 text-2xl relative z-30">
+              Press <span className="text-yellow-500 text-3xl bg-white px-3 rounded-lg shadow-sm border-2 border-yellow-400 mx-2">{currentExpectedNote}</span> !
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Piano - Full height flex container */}
+      <div className="flex-1 flex items-stretch pb-0 px-0 overflow-hidden relative">
+        <div className="w-full flex justify-center h-full">
+          <div className="flex w-full h-full">
             {PIANO_KEYS.map((key, idx) => {
               const isHighlighted = key.note === currentExpectedNote;
               const wasPlayed = playedNotes.includes(key.note) && selectedSong?.notes.filter(n => n === key.note).length > 0;
@@ -428,26 +602,38 @@ export default function PianoApp() {
                   }}
                   onMouseDown={() => handleKeyPress(key.note)}
                   className={`
-                    relative flex flex-col items-center justify-end pb-3
+                    relative flex flex-col items-center justify-end pb-4
                     transition-all duration-100 select-none
                     ${key.type === 'white'
-                      ? `w-12 h-44 bg-white border-2 border-gray-300 rounded-b-lg shadow-lg
+                      ? `flex-1 h-full bg-white border-2 border-gray-300 rounded-b-xl shadow-lg z-0
                          active:bg-gray-200 hover:bg-gray-50
-                         ${isHighlighted ? 'bg-yellow-300 border-yellow-500 animate-pulse shadow-yellow-400 shadow-xl' : ''}`
-                      : `w-8 h-28 bg-gray-800 border-2 border-gray-900 rounded-b-md shadow-md -mx-4 z-10
+                         ${isHighlighted ? 'bg-yellow-300 border-yellow-500 animate-pulse shadow-yellow-400 shadow-inner' : ''}`
+                      : `w-[5%] h-[60%] bg-gray-800 border-2 border-gray-900 rounded-b-lg shadow-md -mx-[2.5%] z-10
                          active:bg-gray-700
                          ${isHighlighted ? 'bg-yellow-500 border-yellow-600 animate-pulse' : ''}`
                     }
                   `}
                   style={{ touchAction: 'manipulation' }}
                 >
-                  <span className={`
-                    text-xs font-bold
-                    ${key.type === 'white' ? 'text-gray-600' : 'text-gray-300'}
-                    ${isHighlighted ? 'text-purple-700 text-sm' : ''}
-                  `}>
-                    {key.note}
-                  </span>
+                  <div className="flex flex-col items-center pointer-events-none">
+                    {/* Machine Icon */}
+                    {instrument === 'machine' && MACHINE_SOUNDS[key.note] && (
+                      <span className="text-4xl mb-4 filter drop-shadow opacity-90 transition-transform duration-200 transform group-active:scale-110">{MACHINE_SOUNDS[key.note].icon}</span>
+                    )}
+
+                    {/* Animal Icon */}
+                    {instrument === 'animals' && ANIMAL_SOUNDS[key.note] && (
+                      <span className="text-4xl mb-4 filter drop-shadow opacity-90 transition-transform duration-200 transform group-active:scale-110">{ANIMAL_SOUNDS[key.note].icon}</span>
+                    )}
+
+                    <span className={`
+                      font-bold
+                      ${key.type === 'white' ? 'text-gray-600 text-xl' : 'text-gray-300 text-sm'}
+                      ${isHighlighted ? 'text-purple-700 text-2xl scale-125' : ''}
+                    `}>
+                      {key.note}
+                    </span>
+                  </div>
                   {isHighlighted && (
                     <div className="absolute top-2 left-1/2 -translate-x-1/2">
                       <span className="text-2xl">👇</span>
