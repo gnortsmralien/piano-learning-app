@@ -99,7 +99,7 @@ export default function PianoApp() {
           // Avoid reloading if already exists
           if (audioBuffersRef.current[config.id]) continue;
 
-          const response = await fetch(`/sounds/${config.id}.mp3`);
+          const response = await fetch(`${import.meta.env.BASE_URL}sounds/${config.id}.mp3`);
           if (response.ok) {
             const arrayBuffer = await response.arrayBuffer();
             const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
